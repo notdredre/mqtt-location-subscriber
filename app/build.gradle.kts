@@ -33,10 +33,12 @@ android {
     kotlinOptions {
         jvmTarget = "1.8"
     }
+    packagingOptions { resources.excludes.add("META-INF/*") }
 }
 
 dependencies {
 
+    implementation("com.hivemq:hivemq-mqtt-client:1.3.3")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
