@@ -22,6 +22,10 @@ public data class LocationModel(private var studentID: Int, private var latitude
         return id
     }
 
+    fun getStudentID(): Int {
+        return studentID
+    }
+
     public fun getLong(): Double {
         return longitude
     }

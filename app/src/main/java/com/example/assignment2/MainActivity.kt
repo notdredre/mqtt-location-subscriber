@@ -14,14 +14,20 @@ import androidx.core.view.WindowInsetsCompat
 import com.hivemq.client.mqtt.mqtt5.Mqtt5AsyncClient
 import com.hivemq.client.mqtt.mqtt5.Mqtt5Client
 import android.Manifest
+import android.graphics.Color
+import android.os.Build
 import android.widget.FrameLayout
+import androidx.core.graphics.toColor
+import com.example.assignment2.db.DBHelper
 import com.example.assignment2.models.LocationModel
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.LatLngBounds
 import com.google.android.gms.maps.model.MarkerOptions
+import com.google.android.gms.maps.model.PolylineOptions
 import com.google.gson.Gson
 import java.nio.charset.Charset
 
@@ -40,7 +46,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
     private var map : GoogleMap? = null
-    private var pointsList = mutableListOf(LocationModel)
+    private var pointsMap : HashMap<Int, ArrayList<LatLng>> = HashMap()
+
+    private val dbHelper: DBHelper = DBHelper(this)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -79,7 +87,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     runOnUiThread {
                         val received = String(publish.payloadAsBytes, Charset.defaultCharset())
                         val receivedLoc = Gson().fromJson(received, LocationModel::class.java)
+                        dbHelper.createLocation(receivedLoc.getStudentID(), receivedLoc.getLat(), receivedLoc.getLong(), receivedLoc.getVelocity())
                         addMarkerAtLocation(receivedLoc)
+                        drawPolyline()
                         Log.e("SUBSCRIBE", "Received a message $receivedLoc")
                     }
             })
@@ -125,7 +135,13 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private fun addMarkerAtLocation(location: LocationModel) {
         val latLng = LatLng(location.getLat(), location.getLong())
-
+        if (pointsMap.get(location.getStudentID()) == null)
+            pointsMap.put(location.getStudentID(), ArrayList())
+        var studentLocs = pointsMap.get(location.getStudentID())
+        studentLocs?.add(latLng)
+        if (studentLocs != null) {
+            pointsMap.put(location.getStudentID(), studentLocs)
+        }
         map?.addMarker(
             MarkerOptions()
                 .position(latLng)
@@ -136,5 +152,30 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
 
+    private fun drawPolyline() {
+        for (student in pointsMap.keys) {
+            val studentPoints = pointsMap[student]
+            val latLngPoints = studentPoints!!.map{it}
+            val polylineOptions = PolylineOptions()
+                .addAll(latLngPoints)
+                .color(StudentIDToColor(student))
+                .width(5f)
+                .geodesic(true)
 
+            map?.addPolyline(polylineOptions)
+            val bounds = LatLngBounds.builder()
+            latLngPoints.forEach { bounds.include(it) }
+            map?.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds.build(), 100))
+        }
+    }
+
+    private fun StudentIDToColor(studentID: Int) : Int {
+        var studentIDColor = studentID % 816000000
+        val color = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            studentIDColor.toColor()
+        } else {
+            TODO("VERSION.SDK_INT < O")
+        }
+        return studentIDColor
+    }
 }
