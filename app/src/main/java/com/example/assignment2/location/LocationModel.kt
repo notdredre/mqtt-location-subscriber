@@ -1,6 +1,7 @@
 package com.example.assignment2.location;
 
 import android.location.Location
+import com.google.android.gms.maps.model.LatLng
 
 public data class LocationModel(private var studentID: Int, private var latitude : Double,
                                 private var longitude : Double,
@@ -14,6 +15,10 @@ public data class LocationModel(private var studentID: Int, private var latitude
         fun toLocationModel(location: Location, studentID: Int) : LocationModel {
             return LocationModel(studentID, location.latitude, location.longitude, location.speed, System.currentTimeMillis())
         }
+    }
+
+    fun toLatLng() : LatLng {
+        return LatLng(this.latitude, this.longitude)
     }
 
     init {

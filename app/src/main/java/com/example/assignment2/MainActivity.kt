@@ -14,14 +14,15 @@ import androidx.core.view.WindowInsetsCompat
 import com.hivemq.client.mqtt.mqtt5.Mqtt5AsyncClient
 import com.hivemq.client.mqtt.mqtt5.Mqtt5Client
 import android.Manifest
-import android.graphics.Color
-import android.os.Build
+import android.annotation.SuppressLint
+import android.widget.TextView
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.assignment2.db.DBHelper
 import com.example.assignment2.location.LocationManager
 import com.example.assignment2.location.LocationModel
 import com.example.assignment2.student.StudentListAdapter
+import com.example.assignment2.student.StudentListInterface
 import com.example.assignment2.student.StudentModel
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
@@ -33,12 +34,10 @@ import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
 import com.google.android.gms.maps.model.PolylineOptions
 import com.google.gson.Gson
+import org.w3c.dom.Text
 import java.nio.charset.Charset
-import kotlin.math.min
-import kotlin.math.pow
-import kotlin.math.sqrt
 
-class MainActivity : AppCompatActivity(), OnMapReadyCallback {
+class MainActivity : AppCompatActivity(), OnMapReadyCallback, StudentListInterface {
     private var mqttClient : Mqtt5AsyncClient? = null
     private val topic : String = "notthatguy"
     private var hasPermissions : Boolean = false
@@ -61,6 +60,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private val studentList: ArrayList<StudentModel> = ArrayList()
     private var studentListAdapter: StudentListAdapter? = null
+    private var focusedStudent: StudentModel? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
 
@@ -76,6 +76,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             .findFragmentById(R.id.map) as SupportMapFragment
         mapFragment.getMapAsync(this)
 
+        studentListAdapter = StudentListAdapter(studentList, this)
         mqttClient = Mqtt5Client.builder()
             .identifier("subscriber")
             .serverHost("broker-816036749.sundaebytestt.com")
@@ -102,12 +103,11 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                         dbHelper.createLocation(receivedLoc.getStudentID(), receivedLoc.getLat(), receivedLoc.getLong(), receivedLoc.getVelocity(), receivedLoc.getTimestamp())
                         locationManager.populatePointsMap(pointsMap)
                         updateStudent(receivedLoc.getStudentID())
-                        studentListAdapter = StudentListAdapter(studentList)
                         updateUI()
                         if (!following)
                             updateCameraToBounds()
                         else
-                            updateCameraToStudent(receivedLoc.getStudentID())
+                            updateCameraToStudent(focusedStudent!!)
                         Log.e("SUBSCRIBE", "Received a message $receivedLoc")
                     }
                 })
@@ -131,19 +131,58 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private fun init() {
         locationManager.populatePointsMap(pointsMap)
-        drawPolyline()
+
+        for (student in pointsMap.keys)
+            updateStudent(student)
+        updateUI()
     }
 
+    @SuppressLint("DefaultLocale")
     private fun updateUI() {
         val subscribeLayout : ConstraintLayout = findViewById(R.id.subscribe)
         val permissionLayout : ConstraintLayout = findViewById(R.id.permissions)
+        subscribeLayout.visibility = if (hasPermissions) View.VISIBLE else View.GONE
+        permissionLayout.visibility = if (!hasPermissions) View.VISIBLE else View.GONE
+
         val studentList: RecyclerView = findViewById(R.id.rvStudents)
         studentListAdapter?.let{
             studentList.adapter = it
         }
         studentList.layoutManager = LinearLayoutManager(this)
-        subscribeLayout.visibility = if (hasPermissions) View.VISIBLE else View.GONE
-        permissionLayout.visibility = if (!hasPermissions) View.VISIBLE else View.GONE
+
+        val mainTitle : TextView = findViewById(R.id.mainTitle)
+        val unfocusedSubtitle : ConstraintLayout = findViewById(R.id.unfocused)
+        val startDate : TextView = findViewById(R.id.startDate)
+        val endDate : TextView = findViewById(R.id.endDate)
+        val focusedSubtitle : ConstraintLayout = findViewById(R.id.focused)
+        val speedDetail : ConstraintLayout = findViewById(R.id.speedDetail)
+        val speeds : TextView = findViewById(R.id.speeds)
+        if (following) {
+            val mainText = "${focusedStudent!!.getStudentID()} Summary"
+            mainTitle.text = mainText
+            unfocusedSubtitle.visibility = View.GONE
+
+            val startDateText = "Start Date:\n${focusedStudent!!.getStartDate()}"
+            val endDateText = "End Date:\n${focusedStudent!!.getEndDate()}"
+            startDate.text = startDateText
+            endDate.text = endDateText
+
+            val speedsText = "Min Speed: ${String.format("%3.2f", focusedStudent!!.getMinSpeed() * 3.6)} km/h\n" +
+                    "Max Speed: ${String.format("%3.2f", focusedStudent!!.getMaxSpeed() * 3.6)} km/h\n" +
+                    "Average Speed: ${String.format("%3.2f", focusedStudent!!.getAvgSpeed() * 3.6)} km/h"
+            speeds.text = speedsText
+            focusedSubtitle.visibility = View.VISIBLE
+            studentList.visibility = View.GONE
+            speedDetail.visibility = View.VISIBLE
+        } else {
+            val mainText = "Assignment 2 Subscriber"
+            mainTitle.text = mainText
+            unfocusedSubtitle.visibility = View.VISIBLE
+            focusedSubtitle.visibility = View.GONE
+            studentList.visibility = View.VISIBLE
+            speedDetail.visibility = View.GONE
+        }
+
         map?.clear()
         drawPolyline()
 
@@ -164,13 +203,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         init()
     }
 
-    private fun addPoint(location: LocationModel) {
-        val latLng = LatLng(location.getLat(), location.getLong())
-        if (pointsMap[location.getStudentID()] == null)
-            pointsMap[location.getStudentID()] = ArrayList()
-        pointsMap[location.getStudentID()]?.add(latLng)
-    }
-
     private fun updateCameraToBounds() {
         val bounds = LatLngBounds.builder()
         pointsMap.values.forEach{
@@ -182,8 +214,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         map?.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds.build(), 100))
     }
 
-    private fun updateCameraToStudent(studentID: Int) {
-        val studentLatLngs = pointsMap[studentID]
+    private fun updateCameraToStudent(student: StudentModel) {
+        val studentLatLngs = pointsMap[student.getStudentID()]
         val bounds = LatLngBounds.builder()
         studentLatLngs?.forEach {
             bounds.include(it)
@@ -191,8 +223,34 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         map?.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds.build(), 100))
     }
 
+    override fun onStudentClicked(studentID: Int) {
+        focusStudent(studentList[studentList.indexOf(StudentModel(studentID))])
+    }
+
+    fun untrackStudent(view: View) {
+        following = false
+        updateCameraToBounds()
+        focusedStudent = null
+        updateUI()
+    }
+
+    private fun focusStudent(student: StudentModel) {
+        following = true
+        updateCameraToStudent(student)
+        focusedStudent = studentList[studentList.indexOf(student)]
+        updateUI()
+    }
+    private fun addMarkers(studentID: Int) {
+        val start = dbHelper.getStartLocation(studentID)
+        val end = dbHelper.getEndLocation(studentID)
+
+        map?.addMarker(MarkerOptions().position(start!!.toLatLng()).title("$studentID Start").contentDescription("This is a description?"))
+        map?.addMarker(MarkerOptions().position(end!!.toLatLng()).title("$studentID End").contentDescription("This is another description"))
+    }
+
     private fun drawPolyline() {
         for (student in pointsMap.keys) {
+            addMarkers(student)
             val studentLocations = dbHelper.getLocationsForStudent(student)
             drawStudentPoints(student, studentLocations, 10000)
         }
@@ -205,36 +263,32 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val pointIter = studentPoints.iterator()
         var last : LocationModel = pointIter.next()
         var curr : LocationModel?
-        var lastLatLng = LatLng(last.getLat(), last.getLong())
+        val lastLatLng = LatLng(last.getLat(), last.getLong())
         var currLatLng: LatLng?
-        var endMarker : Marker? = null
-        map?.addMarker(MarkerOptions().position(lastLatLng).title("$studentID Start"))
+        val drawBetween = ArrayList<LatLng>()
+        drawBetween.add(lastLatLng)
         while (pointIter.hasNext()) {
-            val drawBetween = ArrayList<LatLng>()
             curr = pointIter.next()
-
             currLatLng = LatLng(curr.getLat(), curr.getLong())
-
-            drawBetween.add(lastLatLng)
             drawBetween.add(currLatLng)
-
-            endMarker?.remove()
-            endMarker = map?.addMarker(MarkerOptions().position(currLatLng).title("$studentID End"))
-
-            val polylineOptions = PolylineOptions()
-                .addAll(drawBetween)
-                .color(Utility.studentIDToColor(studentID))
-                .width(5f)
-                .geodesic(true)
-            val drawnLine = map?.addPolyline(polylineOptions)
             if (curr.getTimestamp() - last.getTimestamp() > interval) {
-                drawnLine?.remove()
-                map?.addMarker(MarkerOptions().position(lastLatLng).title("$studentID End"))
-                map?.addMarker(MarkerOptions().position(currLatLng).title("$studentID Start"))
+                drawBetween.remove(currLatLng)
+                val polylineOptions = PolylineOptions()
+                    .addAll(drawBetween)
+                    .color(Utility.studentIDToColor(studentID))
+                    .width(5f)
+                    .geodesic(true)
+                map?.addPolyline(polylineOptions)
+                drawBetween.clear()
             }
-
             last = curr
         }
+        val polylineOptions = PolylineOptions()
+            .addAll(drawBetween)
+            .color(Utility.studentIDToColor(studentID))
+            .width(5f)
+            .geodesic(true)
+        map?.addPolyline(polylineOptions)
     }
 
     private fun updateStudent(studentID: Int) {

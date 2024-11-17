@@ -122,25 +122,61 @@ class DBHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null
         return result
     }
 
-    fun getStart(studentID: Int) : Int {
+    fun getStart(studentID: Int) : Long {
         val db = this.readableDatabase
         val cursor = db.query("Location", arrayOf("timestamp"), "studentID = ?", arrayOf(studentID.toString()), null, null, "timestamp ASC")
-        var result = 0
+        var result : Long = 0
         with(cursor) {
             cursor.moveToFirst()
-            result = getInt(getColumnIndexOrThrow("timestamp"))
+            result = getLong(getColumnIndexOrThrow("timestamp"))
         }
         cursor.close()
         return result
     }
 
-    fun getEnd(studentID: Int) : Int {
+    fun getEnd(studentID: Int) : Long {
         val db = this.readableDatabase
         val cursor = db.query("Location", arrayOf("timestamp"), "studentID = ?", arrayOf(studentID.toString()), null, null, "timestamp DESC")
-        var result = 0
+        var result : Long = 0
         with(cursor) {
             cursor.moveToFirst()
-            result = getInt(getColumnIndexOrThrow("timestamp"))
+            result = getLong(getColumnIndexOrThrow("timestamp"))
+        }
+        cursor.close()
+        return result
+    }
+
+    fun getStartLocation(studentID: Int) : LocationModel? {
+        var result : LocationModel? = null
+        val db = this.readableDatabase
+        val cursor = db.query("Location", null, "studentID = ?", arrayOf(studentID.toString()), null, null, "timestamp ASC")
+        with(cursor) {
+            while(moveToNext()) {
+                val latitude = getDouble(getColumnIndexOrThrow("latitude"))
+                val longitude = getDouble(getColumnIndexOrThrow("longitude"))
+                val velocity = getFloat(getColumnIndexOrThrow("velocity"))
+                val timestamp = getLong(getColumnIndexOrThrow("timestamp"))
+                val location = LocationModel(studentID, latitude, longitude, velocity, timestamp)
+                result = location
+            }
+        }
+        cursor.close()
+        return result
+    }
+
+    fun getEndLocation(studentID: Int) : LocationModel? {
+        var result : LocationModel? = null
+        val db = this.readableDatabase
+        val cursor = db.query("Location", null, "studentID = ?", arrayOf(studentID.toString()), null, null, "timestamp DESC")
+        with(cursor) {
+            while(moveToNext()) {
+                val latitude = getDouble(getColumnIndexOrThrow("latitude"))
+                val longitude = getDouble(getColumnIndexOrThrow("longitude"))
+                val velocity = getFloat(getColumnIndexOrThrow("velocity"))
+                val timestamp = getLong(getColumnIndexOrThrow("timestamp"))
+                val location = LocationModel(studentID, latitude, longitude, velocity, timestamp)
+                result = location
+            }
         }
         cursor.close()
         return result

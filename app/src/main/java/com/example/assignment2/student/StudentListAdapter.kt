@@ -1,6 +1,7 @@
 package com.example.assignment2.student
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -11,7 +12,7 @@ import androidx.recyclerview.widget.RecyclerView.Adapter
 import com.example.assignment2.R
 import com.example.assignment2.Utility
 
-class StudentListAdapter(private val students: List<StudentModel>) : RecyclerView.Adapter<StudentListAdapter.ViewHolder>() {
+class StudentListAdapter(private val students: List<StudentModel>, private val studentListInterface: StudentListInterface) : RecyclerView.Adapter<StudentListAdapter.ViewHolder>() {
     class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val studentID: TextView = itemView.findViewById(R.id.studentID)
         val speed: TextView = itemView.findViewById(R.id.speeds)
@@ -31,6 +32,9 @@ class StudentListAdapter(private val students: List<StudentModel>) : RecyclerVie
         val minSpeedKMH = String.format("%3.2f", student.getMinSpeed() * 3.6)
         val maxSpeedKMH = String.format("%3.2f", student.getMaxSpeed() * 3.6)
         holder.speed.text = "Min Speed: $minSpeedKMH km/h\nMax Speed: $maxSpeedKMH km/h"
+        holder.button.setOnClickListener {
+            studentListInterface.onStudentClicked(student.getStudentID())
+        }
 
     }
 
