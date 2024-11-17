@@ -16,9 +16,13 @@ import com.hivemq.client.mqtt.mqtt5.Mqtt5Client
 import android.Manifest
 import android.graphics.Color
 import android.os.Build
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.example.assignment2.db.DBHelper
 import com.example.assignment2.location.LocationManager
 import com.example.assignment2.location.LocationModel
+import com.example.assignment2.student.StudentListAdapter
+import com.example.assignment2.student.StudentModel
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.OnMapReadyCallback
@@ -30,6 +34,7 @@ import com.google.android.gms.maps.model.MarkerOptions
 import com.google.android.gms.maps.model.PolylineOptions
 import com.google.gson.Gson
 import java.nio.charset.Charset
+import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.sqrt
 
@@ -53,6 +58,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private val dbHelper: DBHelper = DBHelper(this)
     private val locationManager : LocationManager = LocationManager(dbHelper)
+
+    private val studentList: ArrayList<StudentModel> = ArrayList()
+    private var studentListAdapter: StudentListAdapter? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
 
@@ -93,15 +101,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                         val receivedLoc = Gson().fromJson(received, LocationModel::class.java)
                         dbHelper.createLocation(receivedLoc.getStudentID(), receivedLoc.getLat(), receivedLoc.getLong(), receivedLoc.getVelocity(), receivedLoc.getTimestamp())
                         locationManager.populatePointsMap(pointsMap)
-                        map?.clear()
-                        drawPolyline()
+                        updateStudent(receivedLoc.getStudentID())
+                        studentListAdapter = StudentListAdapter(studentList)
+                        updateUI()
                         if (!following)
                             updateCameraToBounds()
                         else
                             updateCameraToStudent(receivedLoc.getStudentID())
                         Log.e("SUBSCRIBE", "Received a message $receivedLoc")
                     }
-            })
+                })
                 ?.send()
                 ?.whenComplete({ subAck, throwable ->
                     if (throwable != null) {
@@ -128,9 +137,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private fun updateUI() {
         val subscribeLayout : ConstraintLayout = findViewById(R.id.subscribe)
         val permissionLayout : ConstraintLayout = findViewById(R.id.permissions)
-
+        val studentList: RecyclerView = findViewById(R.id.rvStudents)
+        studentListAdapter?.let{
+            studentList.adapter = it
+        }
+        studentList.layoutManager = LinearLayoutManager(this)
         subscribeLayout.visibility = if (hasPermissions) View.VISIBLE else View.GONE
         permissionLayout.visibility = if (!hasPermissions) View.VISIBLE else View.GONE
+        map?.clear()
+        drawPolyline()
+
     }
 
     fun checkPermissions() : Boolean {
@@ -207,7 +223,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
             val polylineOptions = PolylineOptions()
                 .addAll(drawBetween)
-                .color(studentIDToColor(studentID))
+                .color(Utility.studentIDToColor(studentID))
                 .width(5f)
                 .geodesic(true)
             val drawnLine = map?.addPolyline(polylineOptions)
@@ -221,15 +237,18 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         }
     }
 
-    private fun studentIDToColor(studentID: Int) : Int {
-        val studentIDColor = studentID.toString().substring(3)
-        val studentRed : Float = studentIDColor.substring(0,2).toInt() / 99f
-        val studentGreen : Float = studentIDColor.substring(2,4).toInt() / 99f
-        val studentBlue : Float = studentIDColor.substring(4,6).toInt() / 99f
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Color.argb(1f, studentRed, studentGreen, studentBlue)
+    private fun updateStudent(studentID: Int) {
+        val minSpeed = dbHelper.getMinSpeed(studentID)
+        val maxSpeed = dbHelper.getMaxSpeed(studentID)
+        val start = dbHelper.getStart(studentID)
+        val end = dbHelper.getEnd(studentID)
+        val new = StudentModel(studentID, minSpeed, maxSpeed, start, end)
+        val curr = StudentModel(studentID)
+        if (studentList.contains(curr)) {
+            val index = studentList.indexOf(curr)
+            studentList[index] = new
         } else {
-            return studentIDColor.toInt()
+            studentList.add(new)
         }
     }
 }

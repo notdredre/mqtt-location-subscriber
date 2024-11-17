@@ -97,4 +97,52 @@ class DBHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null
         cursor.close()
         return results
     }
+
+    fun getMinSpeed(studentID: Int) : Float {
+        val db = this.readableDatabase
+        val cursor = db.query("Location", arrayOf("velocity"), "studentID = ?", arrayOf(studentID.toString()), null, null, "velocity ASC")
+        var result = 0f
+        with(cursor) {
+            cursor.moveToFirst()
+            result = getFloat(getColumnIndexOrThrow("velocity"))
+        }
+        cursor.close()
+        return result
+    }
+
+    fun getMaxSpeed(studentID: Int) : Float {
+        val db = this.readableDatabase
+        val cursor = db.query("Location", arrayOf("velocity"), "studentID = ?", arrayOf(studentID.toString()), null, null, "velocity DESC")
+        var result = 0f
+        with(cursor) {
+            cursor.moveToFirst()
+            result = getFloat(getColumnIndexOrThrow("velocity"))
+        }
+        cursor.close()
+        return result
+    }
+
+    fun getStart(studentID: Int) : Int {
+        val db = this.readableDatabase
+        val cursor = db.query("Location", arrayOf("timestamp"), "studentID = ?", arrayOf(studentID.toString()), null, null, "timestamp ASC")
+        var result = 0
+        with(cursor) {
+            cursor.moveToFirst()
+            result = getInt(getColumnIndexOrThrow("timestamp"))
+        }
+        cursor.close()
+        return result
+    }
+
+    fun getEnd(studentID: Int) : Int {
+        val db = this.readableDatabase
+        val cursor = db.query("Location", arrayOf("timestamp"), "studentID = ?", arrayOf(studentID.toString()), null, null, "timestamp DESC")
+        var result = 0
+        with(cursor) {
+            cursor.moveToFirst()
+            result = getInt(getColumnIndexOrThrow("timestamp"))
+        }
+        cursor.close()
+        return result
+    }
 }
