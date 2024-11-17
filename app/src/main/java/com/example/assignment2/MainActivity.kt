@@ -16,20 +16,22 @@ import com.hivemq.client.mqtt.mqtt5.Mqtt5Client
 import android.Manifest
 import android.graphics.Color
 import android.os.Build
-import android.widget.FrameLayout
-import androidx.core.graphics.toColor
 import com.example.assignment2.db.DBHelper
-import com.example.assignment2.models.LocationModel
+import com.example.assignment2.location.LocationManager
+import com.example.assignment2.location.LocationModel
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.LatLngBounds
+import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
 import com.google.android.gms.maps.model.PolylineOptions
 import com.google.gson.Gson
 import java.nio.charset.Charset
+import kotlin.math.pow
+import kotlin.math.sqrt
 
 class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private var mqttClient : Mqtt5AsyncClient? = null
@@ -47,10 +49,13 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private var map : GoogleMap? = null
     private var pointsMap : HashMap<Int, ArrayList<LatLng>> = HashMap()
+    private var following : Boolean = false
 
     private val dbHelper: DBHelper = DBHelper(this)
+    private val locationManager : LocationManager = LocationManager(dbHelper)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContentView(R.layout.activity_main)
@@ -59,7 +64,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
             insets
         }
-
         val mapFragment = supportFragmentManager
             .findFragmentById(R.id.map) as SupportMapFragment
         mapFragment.getMapAsync(this)
@@ -87,9 +91,14 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     runOnUiThread {
                         val received = String(publish.payloadAsBytes, Charset.defaultCharset())
                         val receivedLoc = Gson().fromJson(received, LocationModel::class.java)
-                        dbHelper.createLocation(receivedLoc.getStudentID(), receivedLoc.getLat(), receivedLoc.getLong(), receivedLoc.getVelocity())
-                        addMarkerAtLocation(receivedLoc)
+                        dbHelper.createLocation(receivedLoc.getStudentID(), receivedLoc.getLat(), receivedLoc.getLong(), receivedLoc.getVelocity(), receivedLoc.getTimestamp())
+                        locationManager.populatePointsMap(pointsMap)
+                        map?.clear()
                         drawPolyline()
+                        if (!following)
+                            updateCameraToBounds()
+                        else
+                            updateCameraToStudent(receivedLoc.getStudentID())
                         Log.e("SUBSCRIBE", "Received a message $receivedLoc")
                     }
             })
@@ -109,6 +118,11 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
 
         updateUI()
+    }
+
+    private fun init() {
+        locationManager.populatePointsMap(pointsMap)
+        drawPolyline()
     }
 
     private fun updateUI() {
@@ -131,51 +145,91 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     override fun onMapReady(p0: GoogleMap) {
         map = p0
+        init()
     }
 
-    private fun addMarkerAtLocation(location: LocationModel) {
+    private fun addPoint(location: LocationModel) {
         val latLng = LatLng(location.getLat(), location.getLong())
-        if (pointsMap.get(location.getStudentID()) == null)
-            pointsMap.put(location.getStudentID(), ArrayList())
-        var studentLocs = pointsMap.get(location.getStudentID())
-        studentLocs?.add(latLng)
-        if (studentLocs != null) {
-            pointsMap.put(location.getStudentID(), studentLocs)
-        }
-        map?.addMarker(
-            MarkerOptions()
-                .position(latLng)
-                .title("Marker ${location.getID()}")
-        )
-        Log.i("MARKER", "ADDED NEW MARKER")
-        map?.moveCamera(CameraUpdateFactory.newLatLngZoom(latLng, 10f))
+        if (pointsMap[location.getStudentID()] == null)
+            pointsMap[location.getStudentID()] = ArrayList()
+        pointsMap[location.getStudentID()]?.add(latLng)
     }
 
+    private fun updateCameraToBounds() {
+        val bounds = LatLngBounds.builder()
+        pointsMap.values.forEach{
+                latlngList ->
+            latlngList.forEach{
+                bounds.include(it)
+            }
+        }
+        map?.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds.build(), 100))
+    }
+
+    private fun updateCameraToStudent(studentID: Int) {
+        val studentLatLngs = pointsMap[studentID]
+        val bounds = LatLngBounds.builder()
+        studentLatLngs?.forEach {
+            bounds.include(it)
+        }
+        map?.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds.build(), 100))
+    }
 
     private fun drawPolyline() {
         for (student in pointsMap.keys) {
-            val studentPoints = pointsMap[student]
-            val latLngPoints = studentPoints!!.map{it}
-            val polylineOptions = PolylineOptions()
-                .addAll(latLngPoints)
-                .color(StudentIDToColor(student))
-                .width(5f)
-                .geodesic(true)
-
-            map?.addPolyline(polylineOptions)
-            val bounds = LatLngBounds.builder()
-            latLngPoints.forEach { bounds.include(it) }
-            map?.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds.build(), 100))
+            val studentLocations = dbHelper.getLocationsForStudent(student)
+            drawStudentPoints(student, studentLocations, 10000)
         }
     }
 
-    private fun StudentIDToColor(studentID: Int) : Int {
-        var studentIDColor = studentID % 816000000
-        val color = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            studentIDColor.toColor()
-        } else {
-            TODO("VERSION.SDK_INT < O")
+    private fun drawStudentPoints(studentID: Int, studentPoints: ArrayList<LocationModel>, interval : Int) {
+        if (studentPoints.isEmpty())
+            return
+
+        val pointIter = studentPoints.iterator()
+        var last : LocationModel = pointIter.next()
+        var curr : LocationModel?
+        var lastLatLng = LatLng(last.getLat(), last.getLong())
+        var currLatLng: LatLng?
+        var endMarker : Marker? = null
+        map?.addMarker(MarkerOptions().position(lastLatLng).title("$studentID Start"))
+        while (pointIter.hasNext()) {
+            val drawBetween = ArrayList<LatLng>()
+            curr = pointIter.next()
+
+            currLatLng = LatLng(curr.getLat(), curr.getLong())
+
+            drawBetween.add(lastLatLng)
+            drawBetween.add(currLatLng)
+
+            endMarker?.remove()
+            endMarker = map?.addMarker(MarkerOptions().position(currLatLng).title("$studentID End"))
+
+            val polylineOptions = PolylineOptions()
+                .addAll(drawBetween)
+                .color(studentIDToColor(studentID))
+                .width(5f)
+                .geodesic(true)
+            val drawnLine = map?.addPolyline(polylineOptions)
+            if (curr.getTimestamp() - last.getTimestamp() > interval) {
+                drawnLine?.remove()
+                map?.addMarker(MarkerOptions().position(lastLatLng).title("$studentID End"))
+                map?.addMarker(MarkerOptions().position(currLatLng).title("$studentID Start"))
+            }
+
+            last = curr
         }
-        return studentIDColor
+    }
+
+    private fun studentIDToColor(studentID: Int) : Int {
+        val studentIDColor = studentID.toString().substring(3)
+        val studentRed : Float = studentIDColor.substring(0,2).toInt() / 99f
+        val studentGreen : Float = studentIDColor.substring(2,4).toInt() / 99f
+        val studentBlue : Float = studentIDColor.substring(4,6).toInt() / 99f
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Color.argb(1f, studentRed, studentGreen, studentBlue)
+        } else {
+            return studentIDColor.toInt()
+        }
     }
 }
