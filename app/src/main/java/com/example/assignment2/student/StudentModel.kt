@@ -1,15 +1,17 @@
 package com.example.assignment2.student
 
+import android.annotation.SuppressLint
 import com.example.assignment2.location.LocationModel
 import java.text.SimpleDateFormat
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.util.Date
 
+@SuppressLint("SimpleDateFormat")
 data class StudentModel(private val studentID: Int, private val minSpeed: Float, private val maxSpeed: Float, private val start: Long, private val end: Long) {
     private val avgSpeed : Float = (minSpeed + maxSpeed) / 2
-    private val startDate = SimpleDateFormat.getDateTimeInstance().format(Date(start))
-    private val endDate = SimpleDateFormat.getDateTimeInstance().format(Date(end))
+    private val startDate = SimpleDateFormat("dd-MM-yyyy").format(Date(start))
+    private val endDate = SimpleDateFormat("dd-MM-yyyy").format(Date(end))
     constructor(studentID: Int) : this(studentID, 0f, 0f, 0, 0)
     fun getStudentID() : Int {
         return studentID

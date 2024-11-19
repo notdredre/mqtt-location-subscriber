@@ -30,11 +30,9 @@ import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.LatLngBounds
-import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
 import com.google.android.gms.maps.model.PolylineOptions
 import com.google.gson.Gson
-import org.w3c.dom.Text
 import java.nio.charset.Charset
 
 class MainActivity : AppCompatActivity(), OnMapReadyCallback, StudentListInterface {
@@ -72,6 +70,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback, StudentListInterfa
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
             insets
         }
+
         val mapFragment = supportFragmentManager
             .findFragmentById(R.id.map) as SupportMapFragment
         mapFragment.getMapAsync(this)
@@ -96,30 +95,37 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback, StudentListInterfa
             mqttClient?.connect()
             mqttClient?.subscribeWith()
                 ?.topicFilter(topic)
-                ?.callback({ publish ->
+                ?.callback { publish ->
                     runOnUiThread {
                         val received = String(publish.payloadAsBytes, Charset.defaultCharset())
                         val receivedLoc = Gson().fromJson(received, LocationModel::class.java)
-                        dbHelper.createLocation(receivedLoc.getStudentID(), receivedLoc.getLat(), receivedLoc.getLong(), receivedLoc.getVelocity(), receivedLoc.getTimestamp())
+                        dbHelper.createLocation(
+                            receivedLoc.getStudentID(),
+                            receivedLoc.getLat(),
+                            receivedLoc.getLong(),
+                            receivedLoc.getVelocity(),
+                            receivedLoc.getTimestamp()
+                        )
                         locationManager.populatePointsMap(pointsMap)
                         updateStudent(receivedLoc.getStudentID())
                         updateUI()
                         if (!following)
                             updateCameraToBounds()
-                        else
+                        else {
+                            focusStudent(focusedStudent!!)
                             updateCameraToStudent(focusedStudent!!)
+                        }
                         Log.e("SUBSCRIBE", "Received a message $receivedLoc")
                     }
-                })
+                }
                 ?.send()
-                ?.whenComplete({ subAck, throwable ->
+                ?.whenComplete { _, throwable ->
                     if (throwable != null) {
                         Log.e("SUBSCRIBE", "COULD NOT SUBSCRIBE")
-                    }
-                    else {
+                    } else {
                         Log.e("SUBSCRIBE", "SUBSCRIPTION SUCCESSFUL")
                     }
-            })
+                }
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -157,9 +163,11 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback, StudentListInterfa
         val focusedSubtitle : ConstraintLayout = findViewById(R.id.focused)
         val speedDetail : ConstraintLayout = findViewById(R.id.speedDetail)
         val speeds : TextView = findViewById(R.id.speeds)
+        map?.clear()
         if (following) {
             val mainText = "${focusedStudent!!.getStudentID()} Summary"
             mainTitle.text = mainText
+            mainTitle.setTextColor(Utility.studentIDToColor(focusedStudent!!.getStudentID()))
             unfocusedSubtitle.visibility = View.GONE
 
             val startDateText = "Start Date:\n${focusedStudent!!.getStartDate()}"
@@ -174,6 +182,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback, StudentListInterfa
             focusedSubtitle.visibility = View.VISIBLE
             studentList.visibility = View.GONE
             speedDetail.visibility = View.VISIBLE
+            drawPolyline(focusedStudent!!)
         } else {
             val mainText = "Assignment 2 Subscriber"
             mainTitle.text = mainText
@@ -181,11 +190,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback, StudentListInterfa
             focusedSubtitle.visibility = View.GONE
             studentList.visibility = View.VISIBLE
             speedDetail.visibility = View.GONE
+            drawPolylines()
         }
-
-        map?.clear()
-        drawPolyline()
-
     }
 
     fun checkPermissions() : Boolean {
@@ -240,20 +246,27 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback, StudentListInterfa
         focusedStudent = studentList[studentList.indexOf(student)]
         updateUI()
     }
+
     private fun addMarkers(studentID: Int) {
         val start = dbHelper.getStartLocation(studentID)
         val end = dbHelper.getEndLocation(studentID)
 
-        map?.addMarker(MarkerOptions().position(start!!.toLatLng()).title("$studentID Start").contentDescription("This is a description?"))
-        map?.addMarker(MarkerOptions().position(end!!.toLatLng()).title("$studentID End").contentDescription("This is another description"))
+        map?.addMarker(MarkerOptions().position(start!!.toLatLng()).title("$studentID Start"))
+        map?.addMarker(MarkerOptions().position(end!!.toLatLng()).title("$studentID End"))
     }
 
-    private fun drawPolyline() {
+    private fun drawPolylines() {
         for (student in pointsMap.keys) {
             addMarkers(student)
-            val studentLocations = dbHelper.getLocationsForStudent(student)
+            val studentLocations = dbHelper.getRecentLocations(student, 1)
             drawStudentPoints(student, studentLocations, 10000)
         }
+    }
+
+    private fun drawPolyline(student: StudentModel) {
+        addMarkers(student.getStudentID())
+        val studentLocations = dbHelper.getLocationsForStudent(student.getStudentID())
+        drawStudentPoints(student.getStudentID(), studentLocations, 10000)
     }
 
     private fun drawStudentPoints(studentID: Int, studentPoints: ArrayList<LocationModel>, interval : Int) {
