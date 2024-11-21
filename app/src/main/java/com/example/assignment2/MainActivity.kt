@@ -1,9 +1,12 @@
 package com.example.assignment2
 
+import android.Manifest
+import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Log
 import android.view.View
+import android.widget.TextView
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -11,11 +14,6 @@ import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import com.hivemq.client.mqtt.mqtt5.Mqtt5AsyncClient
-import com.hivemq.client.mqtt.mqtt5.Mqtt5Client
-import android.Manifest
-import android.annotation.SuppressLint
-import android.widget.TextView
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.assignment2.db.DBHelper
@@ -33,11 +31,14 @@ import com.google.android.gms.maps.model.LatLngBounds
 import com.google.android.gms.maps.model.MarkerOptions
 import com.google.android.gms.maps.model.PolylineOptions
 import com.google.gson.Gson
+import com.hivemq.client.mqtt.mqtt5.Mqtt5AsyncClient
+import com.hivemq.client.mqtt.mqtt5.Mqtt5Client
 import java.nio.charset.Charset
 
 class MainActivity : AppCompatActivity(), OnMapReadyCallback, StudentListInterface {
     private var mqttClient : Mqtt5AsyncClient? = null
-    private val topic : String = "notthatguy"
+    private val brokerAddress : String = "broker-816036749.sundaebytestt.com"
+    private val topic : String = "assignment/location"
     private var hasPermissions : Boolean = false
     private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
             results : Map<String, Boolean> ->
@@ -45,7 +46,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback, StudentListInterfa
         for (result in results.keys) {
             if (results[result] == false)
                 hasPermissions = false
-            //updateUI()
         }
     }
 
@@ -78,7 +78,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback, StudentListInterfa
         studentListAdapter = StudentListAdapter(studentList, this)
         mqttClient = Mqtt5Client.builder()
             .identifier("subscriber")
-            .serverHost("broker-816036749.sundaebytestt.com")
+            .serverHost(brokerAddress)
             .serverPort(1883)
             .buildAsync()
 
@@ -115,7 +115,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback, StudentListInterfa
                             focusStudent(focusedStudent!!)
                             updateCameraToStudent(focusedStudent!!)
                         }
-                        Log.e("SUBSCRIBE", "Received a message $receivedLoc")
                     }
                 }
                 ?.send()
@@ -123,7 +122,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback, StudentListInterfa
                     if (throwable != null) {
                         Log.e("SUBSCRIBE", "COULD NOT SUBSCRIBE")
                     } else {
-                        Log.e("SUBSCRIBE", "SUBSCRIPTION SUCCESSFUL")
+                        Log.i("SUBSCRIBE", "SUBSCRIPTION SUCCESSFUL")
                     }
                 }
         } catch (e: Exception) {
@@ -194,12 +193,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback, StudentListInterfa
         }
     }
 
-    fun checkPermissions() : Boolean {
-        return ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED &&
-                ContextCompat.checkSelfPermission(this, Manifest.permission.INTERNET) == PackageManager.PERMISSION_GRANTED &&
-                ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-    }
-
     fun getPermissions(view: View) {
         requestPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION))
     }
@@ -248,6 +241,16 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback, StudentListInterfa
     }
 
     private fun addMarkers(studentID: Int) {
+        var locations: ArrayList<LocationModel>?
+        if (!following) {
+            locations = dbHelper.getRecentLocations(studentID, 5)
+        } else {
+            locations = dbHelper.getLocations()
+        }
+
+        if (locations.isEmpty())
+            return
+
         val start = dbHelper.getStartLocation(studentID)
         val end = dbHelper.getEndLocation(studentID)
 

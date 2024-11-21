@@ -1,10 +1,7 @@
 package com.example.assignment2.student
 
 import android.annotation.SuppressLint
-import com.example.assignment2.location.LocationModel
 import java.text.SimpleDateFormat
-import java.time.LocalDateTime
-import java.time.ZoneOffset
 import java.util.Date
 
 @SuppressLint("SimpleDateFormat")

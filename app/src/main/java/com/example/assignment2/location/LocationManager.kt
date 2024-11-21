@@ -9,12 +9,13 @@ class LocationManager(private val dbHelper: DBHelper) {
         val students = dbHelper.getStudents()
         students.forEach { student ->
             val studentLatLng = ArrayList<LatLng>()
-            val studentLocations = dbHelper.getLocationsForStudent(student)
+            val studentLocations = dbHelper.getRecentLocations(student, 5)
             studentLocations.forEach { location ->
                 val latLng = LatLng(location.getLat(), location.getLong())
                 studentLatLng.add(latLng)
             }
-            pointsMap[student] = studentLatLng
+            if (studentLatLng.isNotEmpty())
+                pointsMap[student] = studentLatLng
         }
     }
 }
